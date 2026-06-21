@@ -133,12 +133,16 @@ file_prev = st.sidebar.file_uploader("1. Dự kiến tuần trước", type=["xl
 if file_prev: save_uploaded_file(file_prev, "prev")
 file_curr = st.sidebar.file_uploader("2. Dự kiến tuần này", type=["xlsx", "csv"])
 if file_curr: save_uploaded_file(file_curr, "curr")
-file_act = st.sidebar.file_uploader("3. Đã ký thực tế", type=["xlsx", "csv"])
-if file_act: save_uploaded_file(file_act, "act")
+
+file_act_prev = st.sidebar.file_uploader("3. Doanh số lần trước", type=["xlsx", "csv"])
+if file_act_prev: save_uploaded_file(file_act_prev, "act_prev")
+file_act_curr = st.sidebar.file_uploader("4. Doanh số mới nhất", type=["xlsx", "csv"])
+if file_act_curr: save_uploaded_file(file_act_curr, "act_curr")
 
 path_prev = get_saved_file("prev")
 path_curr = get_saved_file("curr")
-path_act = get_saved_file("act")
+path_act_prev = get_saved_file("act_prev")
+path_act_curr = get_saved_file("act_curr")
 
 st.sidebar.divider()
 st.sidebar.subheader("Cấu hình Thuật toán")
@@ -162,7 +166,14 @@ def load_excel_data(file_path, sheet_name=None):
                         return pd.read_excel(file_path, sheet_name=sn)
                 st.error(f"❌ Không tìm thấy sheet '{sheet_name}' trong file. Các sheet hiện có: {xls.sheet_names}")
                 return None
-            return pd.read_excel(file_path)
+            # Nếu không chỉ định sheet_name, ưu tiên tìm sheet chứa data thay vì report
+            best_sheet = xls.sheet_names[0]
+            for sn in xls.sheet_names:
+                sn_lower = sn.lower()
+                if any(k in sn_lower for k in ['danh sách', 'data', 'dữ liệu', 'chi tiết']):
+                    best_sheet = sn
+                    break
+            return pd.read_excel(file_path, sheet_name=best_sheet)
     except Exception as e:
         st.error(f"❌ Lỗi khi đọc file: {e}")
         return None
@@ -183,12 +194,13 @@ def auto_detect_col(df, keywords, fallback_index=0):
     try: return df.columns[fallback_index]
     except: return df.columns[0]
 
-if path_prev and path_curr and path_act:
+if path_prev and path_curr and path_act_prev and path_act_curr:
     df_prev_raw = load_excel_data(path_prev)
     df_curr_raw = load_excel_data(path_curr)
-    df_act_raw = load_excel_data(path_act, sheet_name="Data doanh số")
+    df_act_prev_raw = load_excel_data(path_act_prev, sheet_name="Data doanh số")
+    df_act_curr_raw = load_excel_data(path_act_curr, sheet_name="Data doanh số")
 
-    if df_prev_raw is not None and df_curr_raw is not None and df_act_raw is not None:
+    if df_prev_raw is not None and df_curr_raw is not None and df_act_prev_raw is not None and df_act_curr_raw is not None:
         
         # --- TỰ ĐỘNG TÌM CỘT ---
         kw_name = ['khách hàng', 'khách', 'công ty', 'tên khách']
@@ -196,6 +208,7 @@ if path_prev and path_curr and path_act:
         kw_bu = ['phòng ban', 'bu', 'bộ phận']
         kw_status = ['trạng thái', 'status', 'loại']
         kw_contract = ['mã hợp đồng', 'mã hđ', 'contract']
+        
         prev_name = auto_detect_col(df_prev_raw, kw_name, fallback_index=1)
         prev_rev = auto_detect_col(df_prev_raw, kw_rev, fallback_index=2)
         prev_bu = auto_detect_col(df_prev_raw, kw_bu, fallback_index=3)
@@ -206,33 +219,15 @@ if path_prev and path_curr and path_act:
         curr_bu = auto_detect_col(df_curr_raw, kw_bu, fallback_index=3)
         curr_status = auto_detect_col(df_curr_raw, kw_status, fallback_index=4)
 
-        kw_act_week = ['tuần', 'week']
-        kw_act_month = ['tháng', 'month']
-        act_name = auto_detect_col(df_act_raw, kw_name, fallback_index=1)
-        act_rev = auto_detect_col(df_act_raw, kw_rev, fallback_index=2)
-        act_bu = auto_detect_col(df_act_raw, kw_bu, fallback_index=3)
-        act_week = auto_detect_col(df_act_raw, kw_act_week, fallback_index=4)
-        act_month = auto_detect_col(df_act_raw, kw_act_month, fallback_index=4)
-        act_contract = auto_detect_col(df_act_raw, kw_contract, fallback_index=5)
+        act_prev_name = auto_detect_col(df_act_prev_raw, kw_name, fallback_index=1)
+        act_prev_rev = auto_detect_col(df_act_prev_raw, kw_rev, fallback_index=2)
+        act_prev_bu = auto_detect_col(df_act_prev_raw, kw_bu, fallback_index=3)
+        act_prev_contract = auto_detect_col(df_act_prev_raw, kw_contract, fallback_index=5)
 
-        # --- LỌC NGẦM THEO THÁNG MỚI NHẤT VÀ TUẦN CUỐI CÙNG CỦA THÁNG ĐÓ ---
-        if act_month and act_month != act_week:
-            unique_act_months = [x for x in df_act_raw[act_month].dropna().unique() if str(x).lower() not in ['nan', 'none', '']]
-            try: unique_act_months.sort()
-            except: pass
-            selected_act_month = unique_act_months[-1] if unique_act_months else None
-        else:
-            selected_act_month = None
-
-        if selected_act_month is not None:
-            df_act_for_weeks = df_act_raw[df_act_raw[act_month] == selected_act_month]
-        else:
-            df_act_for_weeks = df_act_raw
-            
-        unique_act_weeks = [x for x in df_act_for_weeks[act_week].dropna().unique() if str(x).lower() not in ['nan', 'none', '']]
-        try: unique_act_weeks.sort()
-        except: pass
-        selected_act_week = unique_act_weeks[-1] if unique_act_weeks else None
+        act_curr_name = auto_detect_col(df_act_curr_raw, kw_name, fallback_index=1)
+        act_curr_rev = auto_detect_col(df_act_curr_raw, kw_rev, fallback_index=2)
+        act_curr_bu = auto_detect_col(df_act_curr_raw, kw_bu, fallback_index=3)
+        act_curr_contract = auto_detect_col(df_act_curr_raw, kw_contract, fallback_index=5)
 
         if st.button("Bắt đầu Phân tích", type="primary"):
             def clean_data(df_raw, col_name, col_rev, col_bu, col_status=None, col_contract=None, is_expected=True):
@@ -271,17 +266,15 @@ if path_prev and path_curr and path_act:
 
             df_prev = clean_data(df_prev_raw, prev_name, prev_rev, prev_bu, prev_status, is_expected=True)
             df_curr = clean_data(df_curr_raw, curr_name, curr_rev, curr_bu, curr_status, is_expected=True)
-            # Lọc Actual file theo selected_act_week và selected_act_month
-            df_act_filtered = df_act_raw[df_act_raw[act_week] == selected_act_week].copy()
-            if selected_act_month is not None:
-                df_act_filtered = df_act_filtered[df_act_filtered[act_month] == selected_act_month]
             
-            df_act = clean_data(df_act_filtered, act_name, act_rev, act_bu, col_contract=act_contract, is_expected=False)
+            df_act_prev_clean = clean_data(df_act_prev_raw, act_prev_name, act_prev_rev, act_prev_bu, col_contract=act_prev_contract, is_expected=False)
+            df_act_curr_clean = clean_data(df_act_curr_raw, act_curr_name, act_curr_rev, act_curr_bu, col_contract=act_curr_contract, is_expected=False)
 
             def normalize_name(s): return str(s).lower().strip()
             df_prev['Name_Norm'] = df_prev['Name'].apply(normalize_name)
             df_curr['Name_Norm'] = df_curr['Name'].apply(normalize_name)
-            df_act['Name_Norm'] = df_act['Name'].apply(normalize_name)
+            df_act_prev_clean['Name_Norm'] = df_act_prev_clean['Name'].apply(normalize_name)
+            df_act_curr_clean['Name_Norm'] = df_act_curr_clean['Name'].apply(normalize_name)
 
             df_prev = df_prev.groupby(['BU', 'Name_Norm', 'Status']).agg({'Name':'first', 'Revenue':'sum'}).reset_index()
             # Thêm ID duy nhất để dễ track khi map 1-1
@@ -289,8 +282,25 @@ if path_prev and path_curr and path_act:
 
             df_curr = df_curr.groupby(['BU', 'Name_Norm', 'Status']).agg({'Name':'first', 'Revenue':'sum'}).reset_index()
             
-            # Gộp nhóm Actual file theo BU, Name_Norm và Contract_Code (Mã hợp đồng)
-            df_act = df_act.groupby(['BU', 'Name_Norm', 'Contract_Code']).agg({'Name':'first', 'Revenue':'sum'}).reset_index()
+            # Gộp nhóm Actual file bằng UID để tránh trùng lặp khi đổi tên khách hàng
+            df_act_prev_clean['Contract_Code'] = df_act_prev_clean['Contract_Code'].fillna('').astype(str).str.strip()
+            df_act_curr_clean['Contract_Code'] = df_act_curr_clean['Contract_Code'].fillna('').astype(str).str.strip()
+            
+            df_act_prev_clean['UID'] = df_act_prev_clean.apply(lambda x: x['Contract_Code'] if x['Contract_Code'] else f"{x['BU']}|{x['Name_Norm']}", axis=1)
+            df_act_curr_clean['UID'] = df_act_curr_clean.apply(lambda x: x['Contract_Code'] if x['Contract_Code'] else f"{x['BU']}|{x['Name_Norm']}", axis=1)
+
+            df_act_prev = df_act_prev_clean.groupby(['BU', 'UID']).agg({'Name_Norm':'first', 'Contract_Code':'first', 'Name':'first', 'Revenue':'sum'}).reset_index()
+            df_act_curr = df_act_curr_clean.groupby(['BU', 'UID']).agg({'Name_Norm':'first', 'Contract_Code':'first', 'Name':'first', 'Revenue':'sum'}).reset_index()
+
+            # --- TÌM ĐƠN ĐƯỢC KÝ TRONG KHOẢNG ĐÓ ---
+            df_act_merged = pd.merge(df_act_curr, df_act_prev[['BU', 'UID', 'Revenue']], on=['BU', 'UID'], how='left', suffixes=('', '_prev'))
+            df_act_merged['Revenue_prev'] = df_act_merged['Revenue_prev'].fillna(0)
+            df_act_merged['New_Revenue'] = df_act_merged['Revenue'] - df_act_merged['Revenue_prev']
+            
+            # Chỉ lấy các đơn có New_Revenue > 0 làm 'đơn đã ký' trong kỳ
+            df_act = df_act_merged[df_act_merged['New_Revenue'] > 0].copy()
+            df_act['Revenue'] = df_act['New_Revenue']
+            df_act = df_act[['BU', 'Name_Norm', 'Contract_Code', 'Name', 'Revenue']]
 
             def get_best_match(name, choices, threshold):
                 best_score = 0
@@ -308,10 +318,35 @@ if path_prev and path_curr and path_act:
                 success_rows = []
                 unexpected_success_rows = []
                 matched_prev_ids = set()
+                contract_to_prev_match = {}
+                
+                # Tính tổng doanh số thực tế cho từng mã hợp đồng để chia tỷ trọng doanh số dự kiến
+                contract_totals = {}
+                for _, r in df_act.iterrows():
+                    if r['Contract_Code']:
+                        contract_totals[r['Contract_Code']] = contract_totals.get(r['Contract_Code'], 0) + r['Revenue']
                 
                 for _, act_row in df_act.iterrows():
-                    # Tìm các ứng viên PREV cùng BU và chưa được map
-                    candidates_df = df_prev[(df_prev['BU'] == act_row['BU']) & (~df_prev['Prev_ID'].isin(matched_prev_ids))].copy()
+                    # Tính doanh số dự kiến được phân bổ (tỷ lệ thuận với doanh số chốt)
+                    def get_allocated_prev(best_match_rev):
+                        if act_row['Contract_Code'] and contract_totals.get(act_row['Contract_Code'], 0) > 0:
+                            return best_match_rev * (act_row['Revenue'] / contract_totals[act_row['Contract_Code']])
+                        return best_match_rev
+
+                    # Nếu Contract_Code này đã được map với một Prev_ID nào đó, thì auto map luôn (chia sẻ doanh số)
+                    if act_row['Contract_Code'] and act_row['Contract_Code'] in contract_to_prev_match:
+                        best_match = contract_to_prev_match[act_row['Contract_Code']]
+                        success_rows.append({
+                            'BU': act_row['BU'],
+                            'Name': act_row['Name'],
+                            'Status': best_match['Status'],
+                            'Revenue_prev': get_allocated_prev(best_match['Revenue']),
+                            'Revenue_act': act_row['Revenue']
+                        })
+                        continue
+
+                    # Tìm các ứng viên PREV trên TOÀN BỘ CÁC BU và chưa được map
+                    candidates_df = df_prev[~df_prev['Prev_ID'].isin(matched_prev_ids)].copy()
                     if candidates_df.empty:
                         unexpected_success_rows.append({
                             'BU': act_row['BU'], 
@@ -324,6 +359,10 @@ if path_prev and path_curr and path_act:
                     
                     # Tính fuzzy score cho tất cả ứng viên
                     candidates_df['Fuzzy_Score'] = candidates_df['Name_Norm'].apply(lambda x: SequenceMatcher(None, act_row['Name_Norm'], x).ratio())
+                    
+                    # Ưu tiên các ứng viên cùng BU (cộng thêm 0.05 điểm)
+                    candidates_df.loc[candidates_df['BU'] == act_row['BU'], 'Fuzzy_Score'] += 0.05
+                    
                     valid_candidates = candidates_df[candidates_df['Fuzzy_Score'] >= fuzzy_threshold].copy()
                     
                     if not valid_candidates.empty:
@@ -333,14 +372,15 @@ if path_prev and path_curr and path_act:
                         
                         best_match = valid_candidates.iloc[0]
                         matched_prev_ids.add(best_match['Prev_ID'])
+                        if act_row['Contract_Code']:
+                            contract_to_prev_match[act_row['Contract_Code']] = best_match
                         
                         success_rows.append({
-                            'BU': best_match['BU'], 
-                            'Name': best_match['Name'], 
+                            'BU': act_row['BU'],
+                            'Name': act_row['Name'],
                             'Status': best_match['Status'],
-                            'Revenue_prev': best_match['Revenue'], 
-                            'Revenue_act': act_row['Revenue'], 
-                            'Match_Score': best_match['Fuzzy_Score']
+                            'Revenue_prev': get_allocated_prev(best_match['Revenue']),
+                            'Revenue_act': act_row['Revenue']
                         })
                     else:
                         unexpected_success_rows.append({
@@ -411,7 +451,7 @@ if path_prev and path_curr and path_act:
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Tổng DS Dự kiến Tuần trước", f"{total_prev:,.0f}")
             m2.metric("Tổng DS Dự kiến Tuần này", f"{total_curr:,.0f}", f"{(total_curr - total_prev):,.0f} ({((total_curr-total_prev)/total_prev*100) if total_prev > 0 else 0:.1f}%)")
-            m3.metric(f"Đã ký từ Dự kiến (Tuần: {selected_act_week})", f"{val_success_act:,.0f}")
+            m3.metric("Đã ký từ Dự kiến (Trong kỳ)", f"{val_success_act:,.0f}")
             conversion_rate = (val_success_act / total_prev * 100) if total_prev > 0 else 0
             m4.metric("Tỷ lệ Chuyển đổi", f"{conversion_rate:.1f}%")
 
@@ -563,4 +603,4 @@ if path_prev and path_curr and path_act:
                 st.success("Không có đơn hàng nào bị Delay.")
 
 else:
-    st.info("👈 Vui lòng tải lên đủ 3 file ở thanh bên trái để bắt đầu phân tích.")
+    st.info("👈 Vui lòng tải lên đủ 4 file ở thanh bên trái để bắt đầu phân tích.")
