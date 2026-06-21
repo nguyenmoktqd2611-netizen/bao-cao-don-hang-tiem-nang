@@ -533,8 +533,8 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
             val_increased = df_increased['Revenue_diff'].sum() if not df_increased.empty else 0
             if val_decreased != 0 or val_increased != 0:
                 mov5, mov6, mov7, mov8 = st.columns(4)
-                mov5.metric("⬇️ Giảm doanh số dự kiến", f"{abs(val_decreased):,.0f}", delta_color="inverse")
-                mov6.metric("⬆️ Tăng doanh số dự kiến", f"{val_increased:,.0f}", delta_color="normal")
+                mov5.metric("⬇️ Giảm doanh số dự kiến (So với tuần trước)", f"{abs(val_decreased):,.0f}", delta_color="inverse")
+                mov6.metric("⬆️ Tăng doanh số dự kiến (So với tuần trước)", f"{val_increased:,.0f}", delta_color="normal")
 
             st.header("Phần 3: Danh sách chi tiết Đơn hàng (Action List)")
             
