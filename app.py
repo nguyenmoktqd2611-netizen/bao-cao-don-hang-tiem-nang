@@ -408,7 +408,9 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                     
                     if match:
                         if is_expected:
-                            delay_rows.append(row.to_dict())
+                            # Lấy thông tin từ file dự kiến tuần này (curr) thay vì tuần trước (prev)
+                            matched_curr_row = df_curr[(df_curr['BU'] == row['BU']) & (df_curr['Name_Norm'] == match)].iloc[0]
+                            delay_rows.append(matched_curr_row.to_dict())
                     else:
                         if is_expected:
                             lost_rows.append(row.to_dict())
