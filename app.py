@@ -399,6 +399,8 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                 # 2. TÌM DELAY VÀ LOST
                 delay_rows = []
                 lost_rows = []
+                decreased_rows = []
+                increased_rows = []
                 for idx, row in df_prev_unmatched.iterrows():
                     candidates = df_curr[df_curr['BU'] == row['BU']]['Name_Norm'].tolist()
                     match, score = get_best_match(row['Name_Norm'], candidates, fuzzy_threshold)
@@ -411,12 +413,35 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                             # Lấy thông tin từ file dự kiến tuần này (curr) thay vì tuần trước (prev)
                             matched_curr_row = df_curr[(df_curr['BU'] == row['BU']) & (df_curr['Name_Norm'] == match)].iloc[0]
                             delay_rows.append(matched_curr_row.to_dict())
+                            
+                            # Tính delta doanh số dự kiến
+                            diff_rev = matched_curr_row['Revenue'] - row['Revenue']
+                            if diff_rev < 0:
+                                decreased_rows.append({
+                                    'BU': row['BU'],
+                                    'Name': matched_curr_row['Name'],
+                                    'Status': matched_curr_row['Status'],
+                                    'Revenue_prev': row['Revenue'],
+                                    'Revenue_curr': matched_curr_row['Revenue'],
+                                    'Revenue_diff': diff_rev
+                                })
+                            elif diff_rev > 0:
+                                increased_rows.append({
+                                    'BU': row['BU'],
+                                    'Name': matched_curr_row['Name'],
+                                    'Status': matched_curr_row['Status'],
+                                    'Revenue_prev': row['Revenue'],
+                                    'Revenue_curr': matched_curr_row['Revenue'],
+                                    'Revenue_diff': diff_rev
+                                })
                     else:
                         if is_expected:
                             lost_rows.append(row.to_dict())
                         
                 df_delay = pd.DataFrame(delay_rows)
                 df_lost = pd.DataFrame(lost_rows)
+                df_decreased = pd.DataFrame(decreased_rows)
+                df_increased = pd.DataFrame(increased_rows)
 
                 # 3. TÌM NEW
                 new_curr_rows = []
@@ -503,6 +528,13 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
             mov2.metric("⏳ Bị chậm tiến độ (Delay)", f"{val_delay:,.0f}", delta_color="off")
             mov3.metric("🔥 Phát sinh mới", f"{val_new:,.0f}")
             mov4.metric("❌ Biến mất / Nghi fail", f"{val_lost:,.0f}", delta_color="inverse")
+            
+            val_decreased = df_decreased['Revenue_diff'].sum() if not df_decreased.empty else 0
+            val_increased = df_increased['Revenue_diff'].sum() if not df_increased.empty else 0
+            if val_decreased != 0 or val_increased != 0:
+                mov5, mov6, mov7, mov8 = st.columns(4)
+                mov5.metric("⬇️ Giảm doanh số dự kiến", f"{abs(val_decreased):,.0f}", delta_color="inverse")
+                mov6.metric("⬆️ Tăng doanh số dự kiến", f"{val_increased:,.0f}", delta_color="normal")
 
             st.header("Phần 3: Danh sách chi tiết Đơn hàng (Action List)")
             
@@ -603,6 +635,72 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                     )
             else:
                 st.success("Không có đơn hàng nào bị Delay.")
+                
+            st.subheader("📉 Các đơn hàng GIẢM Doanh số dự kiến (So với tuần trước)")
+            if not df_decreased.empty:
+                df_dec_display = df_decreased.copy().sort_values(by='Revenue_diff', ascending=True).reset_index(drop=True)
+                total_prev = df_dec_display['Revenue_prev'].sum()
+                total_curr = df_dec_display['Revenue_curr'].sum()
+                total_diff = df_dec_display['Revenue_diff'].sum()
+                
+                df_dec_display.loc[len(df_dec_display)] = {
+                    'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 
+                    'Revenue_prev': total_prev, 'Revenue_curr': total_curr, 'Revenue_diff': total_diff
+                }
+                df_dec_display.index = list(range(1, len(df_dec_display))) + [""]
+                df_dec_display = df_dec_display.reset_index().rename(columns={
+                    'index': 'STT',
+                    'Revenue_prev': 'DS Tuần trước',
+                    'Revenue_curr': 'DS Tuần này',
+                    'Revenue_diff': 'Mức Giảm'
+                })
+                st.markdown(
+                    df_dec_display.style.format({
+                        "DS Tuần trước": "{:,.0f}",
+                        "DS Tuần này": "{:,.0f}",
+                        "Mức Giảm": "{:,.0f}"
+                    }).set_table_styles([{'selector': 'th', 'props': [('text-align', 'center !important')]}])
+                    .hide(axis='index')
+                    .apply(lambda x: ['font-weight: 700; background-color: #fee2e2; color: #b91c1c;' if x['BU'] == 'TỔNG CỘNG' else '' for _ in x], axis=1)
+                    .set_properties(subset=['STT', 'BU', 'Name', 'Status'], **{'text-align': 'center'})
+                    .set_properties(subset=['DS Tuần trước', 'DS Tuần này', 'Mức Giảm'], **{'text-align': 'right'})
+                    .to_html(escape=False), unsafe_allow_html=True
+                )
+            else:
+                st.success("Tuyệt vời! Không có đơn hàng nào bị giảm doanh số dự kiến.")
+                
+            st.subheader("📈 Các đơn hàng TĂNG Doanh số dự kiến (So với tuần trước)")
+            if not df_increased.empty:
+                df_inc_display = df_increased.copy().sort_values(by='Revenue_diff', ascending=False).reset_index(drop=True)
+                total_prev = df_inc_display['Revenue_prev'].sum()
+                total_curr = df_inc_display['Revenue_curr'].sum()
+                total_diff = df_inc_display['Revenue_diff'].sum()
+                
+                df_inc_display.loc[len(df_inc_display)] = {
+                    'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 
+                    'Revenue_prev': total_prev, 'Revenue_curr': total_curr, 'Revenue_diff': total_diff
+                }
+                df_inc_display.index = list(range(1, len(df_inc_display))) + [""]
+                df_inc_display = df_inc_display.reset_index().rename(columns={
+                    'index': 'STT',
+                    'Revenue_prev': 'DS Tuần trước',
+                    'Revenue_curr': 'DS Tuần này',
+                    'Revenue_diff': 'Mức Tăng'
+                })
+                st.markdown(
+                    df_inc_display.style.format({
+                        "DS Tuần trước": "{:,.0f}",
+                        "DS Tuần này": "{:,.0f}",
+                        "Mức Tăng": "{:,.0f}"
+                    }).set_table_styles([{'selector': 'th', 'props': [('text-align', 'center !important')]}])
+                    .hide(axis='index')
+                    .apply(lambda x: ['font-weight: 700; background-color: #dcfce7; color: #15803d;' if x['BU'] == 'TỔNG CỘNG' else '' for _ in x], axis=1)
+                    .set_properties(subset=['STT', 'BU', 'Name', 'Status'], **{'text-align': 'center'})
+                    .set_properties(subset=['DS Tuần trước', 'DS Tuần này', 'Mức Tăng'], **{'text-align': 'right'})
+                    .to_html(escape=False), unsafe_allow_html=True
+                )
+            else:
+                st.info("Không có đơn hàng nào tăng doanh số dự kiến.")
 
 else:
     st.info("👈 Vui lòng tải lên đủ 4 file ở thanh bên trái để bắt đầu phân tích.")
