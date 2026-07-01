@@ -10,104 +10,219 @@ st.set_page_config(page_title="Phân tích Pipeline", layout="wide", initial_sid
 st.title("📊 Phân Tích Biến Động Pipeline Kinh Doanh")
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-html, body, [class*="css"]  {
-    font-family: 'Inter', sans-serif !important;
+/* Global Font & Background */
+html, body, [class*="css"] {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
 }
 
-/* Metric Cards */
+/* Background of main app */
+.stApp {
+    background: radial-gradient(circle at top left, #f0f4ff, #ffffff, #faf5ff);
+    background-size: 200% 200%;
+    animation: gradientBG 15s ease infinite;
+}
+
+@keyframes gradientBG {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Metric Cards (Glassmorphism + Hover) */
 div[data-testid="stMetric"] {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
-    padding: 15px 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    border-left: 4px solid #3b82f6;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    padding: 24px 20px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.02);
+    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
 }
+
+div[data-testid="stMetric"]::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 5px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
 div[data-testid="stMetric"]:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 15px -5px rgba(0, 0, 0, 0.04);
 }
+
+div[data-testid="stMetric"]:hover::before {
+    opacity: 1;
+}
+
 div[data-testid="stMetricValue"] {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #1e293b;
+    font-size: 2.2rem !important;
+    font-weight: 800;
+    background: -webkit-linear-gradient(45deg, #0f172a, #334155);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1.2;
 }
+
 div[data-testid="stMetricLabel"] {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
     color: #64748b;
-    margin-bottom: 5px;
+    margin-bottom: 10px;
 }
 
 /* Headers */
 h1 {
-    background: -webkit-linear-gradient(45deg, #1d4ed8, #8b5cf6);
+    font-size: 2.8rem !important;
+    background: linear-gradient(to right, #1d4ed8, #7c3aed, #db2777);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     font-weight: 800 !important;
+    margin-bottom: 1rem;
+    animation: textGradient 6s linear infinite;
+    background-size: 200% auto;
 }
+
+@keyframes textGradient {
+    0% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+    100% { background-position: 0% center; }
+}
+
 h2 {
-    color: #0f172a;
-    font-weight: 700 !important;
-    border-bottom: 2px solid #f1f5f9;
-    padding-bottom: 10px;
-    margin-top: 30px;
+    color: #0f172a !important;
+    font-weight: 800 !important;
+    border-bottom: none;
+    position: relative;
+    padding-bottom: 15px;
+    margin-top: 50px !important;
+    font-size: 1.8rem !important;
 }
-h3 {
-    color: #334155;
-    font-weight: 600 !important;
+
+h2::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 80px;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
 }
 
 /* Sidebar */
 [data-testid="stSidebar"] {
-    background-color: #f8fafc;
-    border-right: 1px solid #e2e8f0;
+    background: rgba(248, 250, 252, 0.85) !important;
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 /* Tables */
+.stDataFrame {
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05) !important;
+    border: 1px solid #e2e8f0;
+}
+
 table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
     width: 100%;
-    border-collapse: collapse;
 }
 th {
-    text-align: center !important;
-    font-weight: 600 !important;
-    color: #1e3a8a !important;
-    font-size: 0.9rem;
-    background-color: #eff6ff !important;
-    padding: 12px 15px !important;
-    border-bottom: 2px solid #bfdbfe !important;
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    font-size: 0.85rem !important;
+    letter-spacing: 0.5px;
+    padding: 18px 20px !important;
+    border-bottom: 2px solid #e2e8f0 !important;
 }
 td {
-    padding: 12px 15px !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-    color: #0f172a !important;
-    vertical-align: middle !important;
+    padding: 16px 20px !important;
+    color: #334155 !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    background: #ffffff;
+    transition: background-color 0.2s ease;
+    font-weight: 500;
 }
 tr:hover td {
-    background-color: #f8fafc !important;
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
 }
 
 /* Buttons */
 .stButton button {
-    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
     color: white !important;
     border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+    border-radius: 12px;
+    padding: 12px 28px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+    text-transform: uppercase;
+    font-size: 0.9rem;
 }
+
 .stButton button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 15px -3px rgba(59, 130, 246, 0.3);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(124, 58, 237, 0.5);
+    background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+}
+
+.stButton button:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 10px rgba(124, 58, 237, 0.3);
+}
+
+/* Expander/Divider */
+hr {
+    border-color: rgba(203, 213, 225, 0.6) !important;
+    margin: 3rem 0;
+}
+
+/* File Uploader styling tweak */
+[data-testid="stFileUploadDropzone"] {
+    border: 2px dashed #94a3b8 !important;
+    border-radius: 16px !important;
+    background-color: rgba(248, 250, 252, 0.6) !important;
+    transition: all 0.3s ease;
+    padding: 20px;
+}
+[data-testid="stFileUploadDropzone"]:hover {
+    border-color: #6366f1 !important;
+    background-color: rgba(238, 242, 255, 0.9) !important;
+    transform: scale(1.01);
+}
+
+/* Subtitle Animation */
+.animated-subtitle {
+    margin-bottom: 2.5rem; 
+    color: #475569; 
+    font-size: 1.15rem; 
+    font-weight: 500;
+    padding: 15px 20px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 12px;
+    border-left: 4px solid #3b82f6;
+    backdrop-filter: blur(5px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
 }
 </style>
-<div style='margin-bottom: 2rem; color: #64748b; font-size: 1.1rem; font-weight: 500;'>
-    ✨ Đối chiếu dòng chảy đơn hàng tự động bằng thuật toán AI khớp Tên khách hàng & Phòng ban.
+<div class="animated-subtitle">
+    ✨ <b>Hệ thống Đối chiếu thông minh</b>: Tự động phân tích dòng chảy đơn hàng bằng AI qua thuật toán khớp Tên & Phòng ban.
 </div>
 """, unsafe_allow_html=True)
 
@@ -145,10 +260,8 @@ path_act_prev = get_saved_file("act_prev")
 path_act_curr = get_saved_file("act_curr")
 
 st.sidebar.divider()
-st.sidebar.subheader("Cấu hình Thuật toán")
-fuzzy_threshold = st.sidebar.slider("Độ chính xác khớp Tên Khách hàng (%)", min_value=50, max_value=100, value=80, step=5) / 100.0
+fuzzy_threshold = 1.0
 
-st.sidebar.divider()
 st.sidebar.subheader("Cấu hình File Dự kiến")
 has_summary_row = st.sidebar.checkbox("File Dự kiến có dòng tổng BU (màu vàng)?", value=True)
 ffill_bu = st.sidebar.checkbox("Tự động điền tên BU xuống các dòng con", value=True)
@@ -412,7 +525,14 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                         if is_expected:
                             # Lấy thông tin từ file dự kiến tuần này (curr) thay vì tuần trước (prev)
                             matched_curr_row = df_curr[(df_curr['BU'] == row['BU']) & (df_curr['Name_Norm'] == match)].iloc[0]
-                            delay_rows.append(matched_curr_row.to_dict())
+                            
+                            delay_item = matched_curr_row.to_dict()
+                            old_status = str(row.get('Status', 'N/A')).strip()
+                            new_status = str(matched_curr_row.get('Status', 'N/A')).strip()
+                            if old_status != new_status:
+                                delay_item['Status'] = f"{old_status} ➡️ {new_status}"
+                            
+                            delay_rows.append(delay_item)
                             
                             # Tính delta doanh số dự kiến
                             diff_rev = matched_curr_row['Revenue'] - row['Revenue']
@@ -435,8 +555,9 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                                     'Revenue_diff': diff_rev
                                 })
                     else:
-                        if is_expected:
-                            lost_rows.append(row.to_dict())
+                        # Đơn không có trong tuần này (biến mất khỏi pipeline)
+                        # Đưa tất cả (cả Dự kiến và Tiềm năng) vào danh sách Nghi ngờ fail
+                        lost_rows.append(row.to_dict())
                         
                 df_delay = pd.DataFrame(delay_rows)
                 df_lost = pd.DataFrame(lost_rows)
