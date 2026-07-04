@@ -4,6 +4,7 @@ import numpy as np
 import os
 import glob
 from difflib import SequenceMatcher
+import re
 
 st.set_page_config(page_title="Phân tích Pipeline", layout="wide", initial_sidebar_state="expanded")
 
@@ -304,8 +305,10 @@ def auto_detect_col(df, keywords, fallback_index=0):
             for kw in keywords:
                 if kw in val_str: return df.columns[col_idx]
                     
-    try: return df.columns[fallback_index]
-    except: return df.columns[0]
+    if fallback_index is not None:
+        try: return df.columns[fallback_index]
+        except: return df.columns[0]
+    return None
 
 if path_prev and path_curr and path_act_prev and path_act_curr:
     df_prev_raw = load_excel_data(path_prev)
@@ -321,11 +324,13 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
         kw_bu = ['phòng ban', 'bu', 'bộ phận']
         kw_status = ['trạng thái', 'status', 'loại']
         kw_contract = ['mã hợp đồng', 'mã hđ', 'contract']
+        kw_reason = ['tình trạng chăm', 'lý do fail', 'lý do', 'ghi chú', 'note']
         
         prev_name = auto_detect_col(df_prev_raw, kw_name, fallback_index=1)
         prev_rev = auto_detect_col(df_prev_raw, kw_rev, fallback_index=2)
         prev_bu = auto_detect_col(df_prev_raw, kw_bu, fallback_index=3)
         prev_status = auto_detect_col(df_prev_raw, kw_status, fallback_index=4)
+        prev_reason = auto_detect_col(df_prev_raw, kw_reason, fallback_index=None)
 
         curr_name = auto_detect_col(df_curr_raw, kw_name, fallback_index=1)
         curr_rev = auto_detect_col(df_curr_raw, kw_rev, fallback_index=2)
@@ -343,10 +348,15 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
         act_curr_contract = auto_detect_col(df_act_curr_raw, kw_contract, fallback_index=5)
 
         if st.button("Bắt đầu Phân tích", type="primary"):
-            def clean_data(df_raw, col_name, col_rev, col_bu, col_status=None, col_contract=None, is_expected=True):
+            def clean_data(df_raw, col_name, col_rev, col_bu, col_status=None, col_contract=None, col_reason=None, is_expected=True):
                 if is_expected and col_status:
-                    df = df_raw[[col_name, col_rev, col_bu, col_status]].copy()
-                    df.columns = ['Name', 'Revenue', 'BU', 'Status']
+                    if col_reason:
+                        df = df_raw[[col_name, col_rev, col_bu, col_status, col_reason]].copy()
+                        df.columns = ['Name', 'Revenue', 'BU', 'Status', 'Reason_Fail']
+                    else:
+                        df = df_raw[[col_name, col_rev, col_bu, col_status]].copy()
+                        df.columns = ['Name', 'Revenue', 'BU', 'Status']
+                        df['Reason_Fail'] = ''
                 else:
                     if col_contract:
                         df = df_raw[[col_name, col_rev, col_bu, col_contract]].copy()
@@ -356,6 +366,7 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                         df.columns = ['Name', 'Revenue', 'BU']
                         df['Contract_Code'] = ''
                     df['Status'] = 'N/A'
+                    df['Reason_Fail'] = ''
                 
                 if is_expected and ffill_bu:
                     df['BU'] = df['BU'].replace('', np.nan).ffill()
@@ -367,6 +378,8 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                 df['Name'] = df['Name'].astype(str).str.strip()
                 df['BU'] = df['BU'].astype(str).str.strip()
                 df['Status'] = df['Status'].astype(str).str.strip()
+                if 'Reason_Fail' in df.columns:
+                    df['Reason_Fail'] = df['Reason_Fail'].astype(str).str.strip().replace('nan', '')
                 df['Revenue'] = pd.to_numeric(df['Revenue'], errors='coerce').fillna(0)
                 df = df[df['Name'] != 'nan']
                 df = df[df['Name'] != 'None']
@@ -377,19 +390,19 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                 df = df[~df['Name'].str.lower().isin(['khách hàng', 'khách', 'công ty', 'tên khách'])]
                 return df
 
-            df_prev = clean_data(df_prev_raw, prev_name, prev_rev, prev_bu, prev_status, is_expected=True)
+            df_prev = clean_data(df_prev_raw, prev_name, prev_rev, prev_bu, prev_status, col_reason=prev_reason, is_expected=True)
             df_curr = clean_data(df_curr_raw, curr_name, curr_rev, curr_bu, curr_status, is_expected=True)
             
             df_act_prev_clean = clean_data(df_act_prev_raw, act_prev_name, act_prev_rev, act_prev_bu, col_contract=act_prev_contract, is_expected=False)
             df_act_curr_clean = clean_data(df_act_curr_raw, act_curr_name, act_curr_rev, act_curr_bu, col_contract=act_curr_contract, is_expected=False)
 
-            def normalize_name(s): return str(s).lower().strip()
+            def normalize_name(s): return re.sub(r'\s+', ' ', str(s).lower().strip())
             df_prev['Name_Norm'] = df_prev['Name'].apply(normalize_name)
             df_curr['Name_Norm'] = df_curr['Name'].apply(normalize_name)
             df_act_prev_clean['Name_Norm'] = df_act_prev_clean['Name'].apply(normalize_name)
             df_act_curr_clean['Name_Norm'] = df_act_curr_clean['Name'].apply(normalize_name)
 
-            df_prev = df_prev.groupby(['BU', 'Name_Norm', 'Status']).agg({'Name':'first', 'Revenue':'sum'}).reset_index()
+            df_prev = df_prev.groupby(['BU', 'Name_Norm', 'Status']).agg({'Name':'first', 'Revenue':'sum', 'Reason_Fail':'first'}).reset_index()
             # Thêm ID duy nhất để dễ track khi map 1-1
             df_prev['Prev_ID'] = range(len(df_prev))
 
@@ -522,10 +535,10 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                     is_expected = 'dự kiến' in status_lower
                     
                     if match:
+                        # Lấy thông tin từ file dự kiến tuần này (curr) thay vì tuần trước (prev)
+                        matched_curr_row = df_curr[(df_curr['BU'] == row['BU']) & (df_curr['Name_Norm'] == match)].iloc[0]
+                        
                         if is_expected:
-                            # Lấy thông tin từ file dự kiến tuần này (curr) thay vì tuần trước (prev)
-                            matched_curr_row = df_curr[(df_curr['BU'] == row['BU']) & (df_curr['Name_Norm'] == match)].iloc[0]
-                            
                             delay_item = matched_curr_row.to_dict()
                             old_status = str(row.get('Status', 'N/A')).strip()
                             new_status = str(matched_curr_row.get('Status', 'N/A')).strip()
@@ -533,27 +546,27 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                                 delay_item['Status'] = f"{old_status} ➡️ {new_status}"
                             
                             delay_rows.append(delay_item)
-                            
-                            # Tính delta doanh số dự kiến
-                            diff_rev = matched_curr_row['Revenue'] - row['Revenue']
-                            if diff_rev < 0:
-                                decreased_rows.append({
-                                    'BU': row['BU'],
-                                    'Name': matched_curr_row['Name'],
-                                    'Status': matched_curr_row['Status'],
-                                    'Revenue_prev': row['Revenue'],
-                                    'Revenue_curr': matched_curr_row['Revenue'],
-                                    'Revenue_diff': diff_rev
-                                })
-                            elif diff_rev > 0:
-                                increased_rows.append({
-                                    'BU': row['BU'],
-                                    'Name': matched_curr_row['Name'],
-                                    'Status': matched_curr_row['Status'],
-                                    'Revenue_prev': row['Revenue'],
-                                    'Revenue_curr': matched_curr_row['Revenue'],
-                                    'Revenue_diff': diff_rev
-                                })
+                        
+                        # Tính delta doanh số dự kiến cho mọi trạng thái (kể cả Tiềm năng)
+                        diff_rev = matched_curr_row['Revenue'] - row['Revenue']
+                        if diff_rev < 0:
+                            decreased_rows.append({
+                                'BU': row['BU'],
+                                'Name': matched_curr_row['Name'],
+                                'Status': matched_curr_row['Status'],
+                                'Revenue_prev': row['Revenue'],
+                                'Revenue_curr': matched_curr_row['Revenue'],
+                                'Revenue_diff': diff_rev
+                            })
+                        elif diff_rev > 0:
+                            increased_rows.append({
+                                'BU': row['BU'],
+                                'Name': matched_curr_row['Name'],
+                                'Status': matched_curr_row['Status'],
+                                'Revenue_prev': row['Revenue'],
+                                'Revenue_curr': matched_curr_row['Revenue'],
+                                'Revenue_diff': diff_rev
+                            })
                     else:
                         # Đơn không có trong tuần này (biến mất khỏi pipeline)
                         # Đưa tất cả (cả Dự kiến và Tiềm năng) vào danh sách Nghi ngờ fail
@@ -597,10 +610,10 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
             st.divider()
             st.header("Phần 1: Bảng tổng hợp số liệu (Executive Summary)")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Tổng DS Dự kiến Tuần trước", f"{total_prev:,.0f}")
-            m2.metric("Tổng DS Dự kiến Tuần này", f"{total_curr:,.0f}", f"{(total_curr - total_prev):,.0f} ({((total_curr-total_prev)/total_prev*100) if total_prev > 0 else 0:.1f}%)")
+            m1.metric("Tổng DS Dự kiến ký + Tiềm năng Tuần trước", f"{total_prev:,.0f}")
+            m2.metric("Tổng DS Dự kiến ký + Tiềm năng Tuần này", f"{total_curr:,.0f}", f"{(total_curr - total_prev):,.0f} ({((total_curr-total_prev)/total_prev*100) if total_prev > 0 else 0:.1f}%)")
             m3.metric("Đã ký từ Dự kiến (Trong kỳ)", f"{val_success_act:,.0f}")
-            conversion_rate = (val_success_act / total_prev * 100) if total_prev > 0 else 0
+            conversion_rate = (val_success_act / prev_thang * 100) if prev_thang > 0 else 0
             m4.metric("Tỷ lệ Chuyển đổi", f"{conversion_rate:.1f}%")
 
             st.markdown("##### 📌 Phân loại trạng thái Đơn dự kiến")
@@ -709,21 +722,23 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
             st.subheader("🚨 Các đơn hàng NGHI NGỜ FAIL (Biến mất khỏi Pipeline)")
             if df_lost.empty: st.success("Không có đơn hàng nào bị biến mất!")
             else: 
-                df_lost_display = df_lost[['BU', 'Name', 'Status', 'Revenue']].copy()
-                total_lost = df_lost_display['Revenue'].sum()
+                df_lost_display = df_lost[['BU', 'Name', 'Status', 'Revenue', 'Reason_Fail']].copy()
+                df_lost_display.rename(columns={'Reason_Fail': 'Lý do fail', 'Revenue': 'DS Dự kiến'}, inplace=True)
+                total_lost = df_lost_display['DS Dự kiến'].sum()
                 df_lost_display.loc[len(df_lost_display)] = {
-                    'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 'Revenue': total_lost
+                    'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 'DS Dự kiến': total_lost, 'Lý do fail': ''
                 }
                 df_lost_display.index = list(range(1, len(df_lost_display))) + [""]
                 df_lost_display = df_lost_display.reset_index().rename(columns={'index': 'STT'})
                 st.markdown(
                     df_lost_display.style.format({
-                        "Revenue": "{:,.0f}"
+                        "DS Dự kiến": "{:,.0f}"
                     }).set_table_styles([{'selector': 'th', 'props': [('text-align', 'center !important')]}])
                     .hide(axis='index')
                     .apply(lambda x: ['font-weight: 700; background-color: #dbeafe; color: #1d4ed8;' if x['BU'] == 'TỔNG CỘNG' else '' for _ in x], axis=1)
                     .set_properties(subset=['STT', 'BU', 'Name', 'Status'], **{'text-align': 'center'})
-                    .set_properties(subset=['Revenue'], **{'text-align': 'right'})
+                    .set_properties(subset=['DS Dự kiến'], **{'text-align': 'right'})
+                    .set_properties(subset=['Lý do fail'], **{'text-align': 'left'})
                     .to_html(escape=False), unsafe_allow_html=True
                 )
 
@@ -734,20 +749,21 @@ if path_prev and path_curr and path_act_prev and path_act_curr:
                     st.success(f"Không có đơn Delay nào lớn hơn ngưỡng {risk_threshold:,.0f} VNĐ.")
                 else:
                     top_delays_display = top_delays[['BU', 'Name', 'Status', 'Revenue']].copy().reset_index(drop=True)
-                    total_delay = top_delays_display['Revenue'].sum()
+                    top_delays_display.rename(columns={'Revenue': 'DS Dự kiến'}, inplace=True)
+                    total_delay = top_delays_display['DS Dự kiến'].sum()
                     top_delays_display.loc[len(top_delays_display)] = {
-                        'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 'Revenue': total_delay
+                        'BU': 'TỔNG CỘNG', 'Name': '', 'Status': '', 'DS Dự kiến': total_delay
                     }
                     top_delays_display.index = list(range(1, len(top_delays_display))) + [""]
                     top_delays_display = top_delays_display.reset_index().rename(columns={'index': 'STT'})
                     st.markdown(
                         top_delays_display.style.format({
-                            "Revenue": "{:,.0f}"
+                            "DS Dự kiến": "{:,.0f}"
                         }).set_table_styles([{'selector': 'th', 'props': [('text-align', 'center !important')]}])
                         .hide(axis='index')
                         .apply(lambda x: ['font-weight: 700; background-color: #dbeafe; color: #1d4ed8;' if x['BU'] == 'TỔNG CỘNG' else '' for _ in x], axis=1)
                         .set_properties(subset=['STT', 'BU', 'Name', 'Status'], **{'text-align': 'center'})
-                        .set_properties(subset=['Revenue'], **{'text-align': 'right'})
+                        .set_properties(subset=['DS Dự kiến'], **{'text-align': 'right'})
                         .to_html(escape=False), unsafe_allow_html=True
                     )
             else:
